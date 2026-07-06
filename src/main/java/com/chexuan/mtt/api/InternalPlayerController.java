@@ -28,6 +28,8 @@ public class InternalPlayerController {
     private final MttMatchRepository matchRepository;
     private final MttRegistrationRepository registrationRepository;
     private final MttCompetitorRepository competitorRepository;
+    private final MttPrizeGrantRepository prizeGrantRepository;
+    private final com.chexuan.mtt.service.MatchLifecycleService lifecycleService;
 
     /** 140 报名 */
     @PostMapping("/register")
@@ -95,6 +97,56 @@ public class InternalPlayerController {
         long registered = registrationRepository.countByMatchIdAndStatus(matchId, MttRegistration.STATUS_REGISTERED);
         long alive = competitorRepository.countByMatchIdAndStatus(matchId, MttCompetitor.STATUS_ALIVE);
         return BaseResponse.success(MatchLifecycleService.toDetail(match, registered, alive));
+    }
+
+    /** 145 我的历史比赛（已结束/解散的参赛记录：名次/奖励，历史页数据源） */
+    @PostMapping("/history")
+    public BaseResponse<List<Map<String, Object>>> history(@RequestBody Map<String, Object> body) {
+        Long userId = Long.valueOf(body.get("userId").toString());
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (MttRegistration reg : registrationRepository.findByUserIdAndStatus(
+                userId, MttRegistration.STATUS_REGISTERED)) {
+            MttMatch m = matchRepository.findById(reg.getMatchId()).orElse(null);
+            if (m == null) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("matchId", m.getId());
+            item.put("name", m.getName());
+            item.put("status", m.getStatus());
+            item.put("startTime", m.getStartTime());
+            item.put("rewardType", m.getRewardType());
+            item.put("participants", m.getParticipants());
+            item.put("totalBonus", m.getTotalBonus());
+            competitorRepository.findByMatchIdAndUserId(m.getId(), userId).ifPresent(c -> {
+                item.put("myRank", c.getRankNo());
+                item.put("myReward", c.getRewardAmount());
+                item.put("eliminateHandNo", c.getEliminateHandNo());
+                item.put("eliminateLevel", c.getEliminateLevel());
+            });
+            result.add(item);
+        }
+        // 最近的在前
+        result.sort((a, b) -> Long.compare((Long) b.get("startTime"), (Long) a.get("startTime")));
+        return BaseResponse.success(result);
+    }
+
+    /** 146 我的奖品（实物赛发放单：待核销/已兑付） */
+    @PostMapping("/myPrizes")
+    public BaseResponse<Object> myPrizes(@RequestBody Map<String, Object> body) {
+        Long userId = Long.valueOf(body.get("userId").toString());
+        return BaseResponse.success(prizeGrantRepository.findByUserIdOrderByIdDesc(userId));
+    }
+
+    /**
+     * 147 群主建赛（权限校验在主服代理层完成：必须是该俱乐部群主/管理员）。
+     * body = MttMatch 字段（clubId 已由主服校验后透传）。
+     */
+    @PostMapping("/createByOwner")
+    public BaseResponse<MttMatch> createByOwner(@RequestBody MttMatch req) {
+        try {
+            return BaseResponse.success(lifecycleService.create(req));
+        } catch (Exception e) {
+            return BaseResponse.error(400, e.getMessage());
+        }
     }
 
     /** 144 我的赛况（名次/记分牌/所在桌） */

@@ -1,6 +1,5 @@
 package com.chexuan.mtt.api;
 
-import com.alibaba.fastjson2.JSON;
 import com.chexuan.mtt.common.BaseResponse;
 import com.chexuan.mtt.entity.*;
 import com.chexuan.mtt.repository.MttRepositories.*;
@@ -31,6 +30,7 @@ public class AdminController {
     private final MttCompetitorRepository competitorRepository;
     private final LedgerEntryRepository ledgerRepository;
     private final MttPrizeGrantRepository prizeGrantRepository;
+    private final MttAutoConfigRepository autoConfigRepository;
 
     /** 创建比赛（字段=MttMatch，金额入参统一"分"） */
     @PostMapping("/create")
@@ -108,6 +108,71 @@ public class AdminController {
     public BaseResponse<List<MttPrizeGrant>> prizeGrants(@RequestBody Map<String, Object> body) {
         Long matchId = Long.valueOf(body.get("matchId").toString());
         return BaseResponse.success(prizeGrantRepository.findByMatchId(matchId));
+    }
+
+    /** ⭐ 查询俱乐部自动开赛配置（无则返回默认关闭态） */
+    @PostMapping("/autoConfig/get")
+    public BaseResponse<MttAutoConfig> getAutoConfig(@RequestBody Map<String, Object> body) {
+        Long clubId = Long.valueOf(body.get("clubId").toString());
+        MttAutoConfig cfg = autoConfigRepository.findByClubId(clubId).orElseGet(() -> {
+            MttAutoConfig def = new MttAutoConfig();
+            def.setClubId(clubId);
+            return def;
+        });
+        return BaseResponse.success(cfg);
+    }
+
+    /** ⭐ 保存俱乐部自动开赛配置（热闹机制,默认关;公共俱乐部开启并在模板配 robotCount） */
+    @PostMapping("/autoConfig/save")
+    public BaseResponse<MttAutoConfig> saveAutoConfig(@RequestBody MttAutoConfig req) {
+        if (req.getClubId() == null) return BaseResponse.error(400, "clubId 不能为空");
+        MttAutoConfig cfg = autoConfigRepository.findByClubId(req.getClubId()).orElse(req);
+        cfg.setClubId(req.getClubId());
+        cfg.setEnabled(Boolean.TRUE.equals(req.getEnabled()));
+        if (req.getMinUpcoming() != null) cfg.setMinUpcoming(Math.max(1, Math.min(10, req.getMinUpcoming())));
+        if (req.getLeadMinutes() != null) cfg.setLeadMinutes(Math.max(5, Math.min(720, req.getLeadMinutes())));
+        if (req.getIntervalMinutes() != null) cfg.setIntervalMinutes(Math.max(10, Math.min(1440, req.getIntervalMinutes())));
+        if (req.getNamePrefix() != null) cfg.setNamePrefix(req.getNamePrefix());
+        if (req.getTemplateJson() != null) cfg.setTemplateJson(req.getTemplateJson());
+        MttAutoConfig saved = autoConfigRepository.save(cfg);
+        log.info("自动开赛配置保存: clubId={}, enabled={}, minUpcoming={}",
+                saved.getClubId(), saved.getEnabled(), saved.getMinUpcoming());
+        return BaseResponse.success(saved);
+    }
+
+    /** ⭐ 赛事统计（俱乐部维度；clubId 不传=全服） */
+    @PostMapping("/stats")
+    public BaseResponse<Map<String, Object>> stats(@RequestBody(required = false) Map<String, Object> body) {
+        Long clubId = body != null && body.get("clubId") != null
+                ? Long.valueOf(body.get("clubId").toString()) : null;
+        List<MttMatch> matches = clubId != null
+                ? matchRepository.findByClubIdOrderByStartTimeDesc(clubId)
+                : matchRepository.findAllByOrderByStartTimeDesc();
+
+        long total = matches.size(), finished = 0, playing = 0, upcoming = 0, dismissed = 0;
+        long bonusSum = 0, participantsSum = 0;
+        for (MttMatch m : matches) {
+            switch (m.getStatus()) {
+                case MttMatch.STATUS_FINISHED -> {
+                    finished++;
+                    bonusSum += m.getTotalBonus() != null ? m.getTotalBonus() : 0L;
+                    participantsSum += m.getParticipants() != null ? m.getParticipants() : 0;
+                }
+                case MttMatch.STATUS_PLAYING -> playing++;
+                case MttMatch.STATUS_CREATE -> upcoming++;
+                case MttMatch.STATUS_DISMISS -> dismissed++;
+            }
+        }
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("clubId", clubId);
+        r.put("totalMatches", total);
+        r.put("finished", finished);
+        r.put("playing", playing);
+        r.put("upcoming", upcoming);
+        r.put("dismissed", dismissed);
+        r.put("finishedBonusSum", bonusSum);          // 已结束比赛的奖池总额
+        r.put("finishedParticipantsSum", participantsSum); // 已结束比赛的参赛人次
+        return BaseResponse.success(r);
     }
 
     /** 实物核销兑付 */

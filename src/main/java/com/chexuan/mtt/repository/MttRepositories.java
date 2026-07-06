@@ -17,6 +17,8 @@ public class MttRepositories {
         List<MttMatch> findByStatusIn(List<Integer> statuses);
         List<MttMatch> findByClubIdOrderByStartTimeDesc(Long clubId);
         List<MttMatch> findAllByOrderByStartTimeDesc();
+        long countByClubIdAndStatus(Long clubId, Integer status);
+        List<MttMatch> findByClubIdAndStatusOrderByStartTimeDesc(Long clubId, Integer status);
     }
 
     @Repository
@@ -56,5 +58,12 @@ public class MttRepositories {
     @Repository
     public interface MttPrizeGrantRepository extends JpaRepository<MttPrizeGrant, Long> {
         List<MttPrizeGrant> findByMatchId(Long matchId);
+        List<MttPrizeGrant> findByUserIdOrderByIdDesc(Long userId);
+    }
+
+    @Repository
+    public interface MttAutoConfigRepository extends JpaRepository<MttAutoConfig, Long> {
+        Optional<MttAutoConfig> findByClubId(Long clubId);
+        List<MttAutoConfig> findByEnabledTrue();
     }
 }

@@ -29,10 +29,14 @@ public class MttScheduler {
     private final MatchLifecycleService lifecycleService;
     private final PayoutService payoutService;
     private final LedgerService ledgerService;
+    private final AutoMatchService autoMatchService;
 
     @Scheduled(fixedDelay = 10_000L, initialDelay = 5_000L)
     public void heartbeat() {
         try {
+            // 0. ⭐ 自动开赛（热闹机制,已开启俱乐部补足未开赛场次;默认全关）
+            autoMatchService.ensureUpcoming();
+
             // 1. 装载
             lifecycleService.loadUnfinished();
 
