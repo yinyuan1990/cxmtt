@@ -2,7 +2,7 @@ package com.chexuan.mtt.service;
 
 import com.chexuan.mtt.entity.LedgerEntry;
 import com.chexuan.mtt.entity.MttMatch;
-import com.chexuan.mtt.repository.MttRepositories.MttMatchRepository;
+import com.chexuan.mtt.repository.MttMatchRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

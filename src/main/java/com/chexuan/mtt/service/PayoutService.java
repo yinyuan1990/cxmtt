@@ -7,7 +7,7 @@ import com.chexuan.mtt.common.MttMsgType;
 import com.chexuan.mtt.config.MttProperties;
 import com.chexuan.mtt.entity.*;
 import com.chexuan.mtt.gateway.GameServerClient;
-import com.chexuan.mtt.repository.MttRepositories.*;
+import com.chexuan.mtt.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

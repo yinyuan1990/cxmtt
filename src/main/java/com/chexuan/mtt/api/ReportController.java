@@ -6,7 +6,7 @@ import com.chexuan.mtt.common.BaseResponse;
 import com.chexuan.mtt.core.MatchContext;
 import com.chexuan.mtt.core.MatchRegistry;
 import com.chexuan.mtt.entity.MttMatch;
-import com.chexuan.mtt.repository.MttRepositories.MttMatchRepository;
+import com.chexuan.mtt.repository.MttMatchRepository;
 import com.chexuan.mtt.service.HandReportService;
 import com.chexuan.mtt.service.RebalanceService;
 import lombok.RequiredArgsConstructor;

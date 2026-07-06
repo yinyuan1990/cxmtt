@@ -4,7 +4,7 @@ import com.chexuan.mtt.common.BaseResponse;
 import com.chexuan.mtt.entity.MttCompetitor;
 import com.chexuan.mtt.entity.MttMatch;
 import com.chexuan.mtt.entity.MttRegistration;
-import com.chexuan.mtt.repository.MttRepositories.*;
+import com.chexuan.mtt.repository.*;
 import com.chexuan.mtt.service.MatchLifecycleService;
 import com.chexuan.mtt.service.RegistrationService;
 import lombok.RequiredArgsConstructor;

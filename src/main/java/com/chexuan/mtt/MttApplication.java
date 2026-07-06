@@ -13,9 +13,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  *
  * 设计文档：src/最新核心文档/扯旋MTT竞标赛-后端规划.html（真相之源，改设计先改它）
  *
- * ⭐ 显式声明仓储扫描包：MttRepositories 里的仓储都是嵌套接口，打包成 Spring Boot 3.2
- * 嵌套 jar（jar:nested:）后默认的 classpath 扫描扫不到嵌套接口（Found 0 JPA repository
- * interfaces），必须显式指定 basePackages 才能正确注册。
+ * ⭐ 显式声明仓储扫描包（双重保险）：早期版本把仓储写成嵌套接口（外层包一个 MttRepositories
+ * 类），Spring Data 在嵌套 jar（jar:nested:）打包下扫描不到嵌套接口（Found 0 JPA repository
+ * interfaces），已改为每个仓储独立文件（顶层接口）根治；这里保留显式 basePackages 以防万一。
  */
 @SpringBootApplication
 @EnableScheduling

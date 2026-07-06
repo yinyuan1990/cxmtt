@@ -1,7 +1,7 @@
 package com.chexuan.mtt.service;
 
 import com.chexuan.mtt.entity.LedgerEntry;
-import com.chexuan.mtt.repository.MttRepositories.LedgerEntryRepository;
+import com.chexuan.mtt.repository.LedgerEntryRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;

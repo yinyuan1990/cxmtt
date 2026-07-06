@@ -5,7 +5,7 @@ import com.chexuan.mtt.core.MatchContext;
 import com.chexuan.mtt.entity.MttCompetitor;
 import com.chexuan.mtt.entity.MttMatch;
 import com.chexuan.mtt.gateway.GameServerClient;
-import com.chexuan.mtt.repository.MttRepositories.MttCompetitorRepository;
+import com.chexuan.mtt.repository.MttCompetitorRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

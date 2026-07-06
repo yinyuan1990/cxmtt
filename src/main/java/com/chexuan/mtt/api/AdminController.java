@@ -2,7 +2,7 @@ package com.chexuan.mtt.api;
 
 import com.chexuan.mtt.common.BaseResponse;
 import com.chexuan.mtt.entity.*;
-import com.chexuan.mtt.repository.MttRepositories.*;
+import com.chexuan.mtt.repository.*;
 import com.chexuan.mtt.service.MatchLifecycleService;
 import com.chexuan.mtt.service.PayoutService;
 import lombok.RequiredArgsConstructor;
