@@ -142,6 +142,22 @@ public class MatchLifecycleService {
         long now = System.currentTimeMillis();
         long untilStart = match.getStartTime() - now;
 
+        // —— ⭐ 开赛前 5 分钟：机器人自动报名（一次，需在 60s 报名截止线之前） ——
+        if (match.getStatus() == MttMatch.STATUS_CREATE && untilStart <= 300_000L && untilStart > 90_000L
+                && !ctx.isRobotsRegistered()
+                && match.getRobotCount() != null && match.getRobotCount() > 0) {
+            synchronized (ctx.getLock()) {
+                if (!ctx.isRobotsRegistered()) {
+                    ctx.setRobotsRegistered(true);
+                    try {
+                        registrationService.registerRobots(match);
+                    } catch (Exception e) {
+                        log.error("机器人自动报名异常: match={}", match.getId(), e);
+                    }
+                }
+            }
+        }
+
         // —— 开赛前 60s：分桌 ——
         if (match.getStatus() == MttMatch.STATUS_CREATE && untilStart <= 60_000L && !ctx.isStartTriggered()) {
             synchronized (ctx.getLock()) {

@@ -26,6 +26,7 @@ public class RegistrationService {
     private final MttMatchRepository matchRepository;
     private final MttRegistrationRepository registrationRepository;
     private final LedgerService ledgerService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     /**
      * 报名。失败抛 IllegalStateException（带用户可读原因）。
@@ -136,5 +137,59 @@ public class RegistrationService {
         }
         reg.setStatus(MttRegistration.STATUS_REFUNDED);
         registrationRepository.save(reg);
+    }
+
+    // ==================== ⭐ 比赛机器人自动报名 ====================
+
+    /**
+     * 自动报名 robotCount 个机器人（开赛前由心跳触发一次）。
+     *
+     * 规则：
+     *   ① 候选=该俱乐部 is_robot=1 的活跃成员；
+     *   ② 跨赛去重：已报名其他"报名期/进行中"比赛的机器人不选（对齐德州 sendAi 去重）；
+     *   ③ 报名费照付（先补足机器人俱乐部积分=运营垫资,不进比赛 ledger）——
+     *      保证奖池公式 participants×entryFee 口径不被机器人破坏；
+     *   ④ 机器人牌桌行为由主服 RobotEngine 托管（公平打、不控盘，见主服守卫）。
+     *
+     * @return 实际报入数
+     */
+    public int registerRobots(MttMatch match) {
+        int want = match.getRobotCount() != null ? match.getRobotCount() : 0;
+        if (want <= 0) return 0;
+
+        long already = registrationRepository.countByMatchIdAndStatus(
+                match.getId(), MttRegistration.STATUS_REGISTERED);
+        int space = (int) Math.min(want, Math.max(0, match.getUpperLimit() - already));
+        if (space <= 0) return 0;
+
+        // ① 该俱乐部机器人 ② 排除已报任何活跃比赛的
+        List<Long> candidates = jdbcTemplate.queryForList(
+                "SELECT cm.user_id FROM club_member cm " +
+                "JOIN user u ON u.id = cm.user_id AND u.is_robot = 1 " +
+                "WHERE cm.club_id = ? AND cm.status = 1 " +
+                "AND cm.user_id NOT IN (" +
+                "  SELECT r.user_id FROM mtt_registration r " +
+                "  JOIN mtt_match m ON m.id = r.match_id AND m.status IN (1,2) " +
+                "  WHERE r.status = 1" +
+                ") ORDER BY RAND() LIMIT " + space,
+                Long.class, match.getClubId());
+
+        int registered = 0;
+        for (Long uid : candidates) {
+            try {
+                // ③ 垫资：补足报名费（运营给机器人上分，不进比赛 ledger 口径）
+                if (match.getEntryFee() > 0 && "SCORE".equals(match.getEntryCurrency())) {
+                    jdbcTemplate.update(
+                            "UPDATE club_member SET score = GREATEST(score, ?) WHERE club_id=? AND user_id=? AND status=1",
+                            match.getEntryFee(), match.getClubId(), uid);
+                }
+                register(match.getId(), uid);
+                registered++;
+            } catch (Exception e) {
+                log.warn("机器人报名失败(跳过): match={}, robot={}, err={}", match.getId(), uid, e.getMessage());
+            }
+        }
+        log.info("比赛机器人自动报名: match={}, 目标={}, 实报={}", match.getId(), want, registered);
+        return registered;
     }
 }

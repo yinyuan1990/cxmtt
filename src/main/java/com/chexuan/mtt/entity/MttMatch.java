@@ -120,6 +120,14 @@ public class MttMatch {
     @Column(name = "champion_user_id")
     private Long championUserId;
 
+    /**
+     * ⭐ 比赛机器人数：开赛前 5 分钟自动报名 N 个该俱乐部机器人(is_robot=1)。
+     * 机器人在比赛桌上按牌力公平打(不控盘,记分牌非真钱);机器人拿到的货币奖励
+     * 回到机器人账户=运营留存。0=无机器人。
+     */
+    @Column(name = "robot_count", nullable = false)
+    private Integer robotCount = 0;
+
     /** 取消原因（DISMISS 时） */
     @Column(name = "dismiss_reason", length = 128)
     private String dismissReason;

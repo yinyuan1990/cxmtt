@@ -25,6 +25,9 @@ public class MatchContext {
     /** 开赛前分桌是否已触发（防心跳重复分桌） */
     private volatile boolean startTriggered = false;
 
+    /** ⭐ 机器人自动报名是否已触发（开赛前5分钟一次） */
+    private volatile boolean robotsRegistered = false;
+
     /** 到点放行发牌是否已触发 */
     private volatile boolean tablesResumed = false;
 
