@@ -1,0 +1,124 @@
+package com.chexuan.mtt.api;
+
+import com.chexuan.mtt.common.BaseResponse;
+import com.chexuan.mtt.entity.MttCompetitor;
+import com.chexuan.mtt.entity.MttMatch;
+import com.chexuan.mtt.entity.MttRegistration;
+import com.chexuan.mtt.repository.MttRepositories.*;
+import com.chexuan.mtt.service.MatchLifecycleService;
+import com.chexuan.mtt.service.RegistrationService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+
+/**
+ * 玩家侧接口（规划 §12.3 客户端 140~144 对应）
+ *
+ * 客户端 → 主服（JWT 校验）→ 代理到这里（X-MTT-TOKEN），userId 由主服解出后透传。
+ */
+@Slf4j
+@RestController
+@RequestMapping("/internal/player")
+@RequiredArgsConstructor
+public class InternalPlayerController {
+
+    private final RegistrationService registrationService;
+    private final MttMatchRepository matchRepository;
+    private final MttRegistrationRepository registrationRepository;
+    private final MttCompetitorRepository competitorRepository;
+
+    /** 140 报名 */
+    @PostMapping("/register")
+    public BaseResponse<String> register(@RequestBody Map<String, Object> body) {
+        try {
+            Long matchId = Long.valueOf(body.get("matchId").toString());
+            Long userId = Long.valueOf(body.get("userId").toString());
+            registrationService.register(matchId, userId);
+            return BaseResponse.success("报名成功，等待开赛");
+        } catch (Exception e) {
+            return BaseResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** 141 退赛 */
+    @PostMapping("/unregister")
+    public BaseResponse<String> unregister(@RequestBody Map<String, Object> body) {
+        try {
+            Long matchId = Long.valueOf(body.get("matchId").toString());
+            Long userId = Long.valueOf(body.get("userId").toString());
+            registrationService.unregister(matchId, userId);
+            return BaseResponse.success("已退赛，报名费已退还");
+        } catch (Exception e) {
+            return BaseResponse.error(400, e.getMessage());
+        }
+    }
+
+    /** 142 比赛列表（按俱乐部；报名期+进行中+近期结束） */
+    @PostMapping("/list")
+    public BaseResponse<List<Map<String, Object>>> list(@RequestBody Map<String, Object> body) {
+        Long clubId = Long.valueOf(body.get("clubId").toString());
+        Long userId = body.get("userId") != null ? Long.valueOf(body.get("userId").toString()) : null;
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (MttMatch m : matchRepository.findByClubIdOrderByStartTimeDesc(clubId)) {
+            long registered = registrationRepository.countByMatchIdAndStatus(
+                    m.getId(), MttRegistration.STATUS_REGISTERED);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("matchId", m.getId());
+            item.put("name", m.getName());
+            item.put("status", m.getStatus());
+            item.put("startTime", m.getStartTime());
+            item.put("entryFee", m.getEntryFee());
+            item.put("initialScore", m.getInitialScore());
+            item.put("seatNum", m.getSeatNum());
+            item.put("rewardType", m.getRewardType());
+            item.put("registered", registered);
+            item.put("upperLimit", m.getUpperLimit());
+            item.put("lowerLimit", m.getLowerLimit());
+            if (userId != null) {
+                item.put("myRegistered", registrationRepository.findByMatchIdAndUserId(m.getId(), userId)
+                        .map(r -> r.getStatus() == MttRegistration.STATUS_REGISTERED).orElse(false));
+            }
+            result.add(item);
+        }
+        return BaseResponse.success(result);
+    }
+
+    /** 143 比赛详情 */
+    @PostMapping("/detail")
+    public BaseResponse<Object> detail(@RequestBody Map<String, Object> body) {
+        Long matchId = Long.valueOf(body.get("matchId").toString());
+        MttMatch match = matchRepository.findById(matchId).orElse(null);
+        if (match == null) return BaseResponse.error(404, "比赛不存在");
+        long registered = registrationRepository.countByMatchIdAndStatus(matchId, MttRegistration.STATUS_REGISTERED);
+        long alive = competitorRepository.countByMatchIdAndStatus(matchId, MttCompetitor.STATUS_ALIVE);
+        return BaseResponse.success(MatchLifecycleService.toDetail(match, registered, alive));
+    }
+
+    /** 144 我的赛况（名次/记分牌/所在桌） */
+    @PostMapping("/myStatus")
+    public BaseResponse<Object> myStatus(@RequestBody Map<String, Object> body) {
+        Long matchId = Long.valueOf(body.get("matchId").toString());
+        Long userId = Long.valueOf(body.get("userId").toString());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("matchId", matchId);
+        result.put("registered", registrationRepository.findByMatchIdAndUserId(matchId, userId)
+                .map(r -> r.getStatus() == MttRegistration.STATUS_REGISTERED).orElse(false));
+
+        MttCompetitor comp = competitorRepository.findByMatchIdAndUserId(matchId, userId).orElse(null);
+        if (comp != null) {
+            result.put("score", comp.getScore());
+            result.put("rank", comp.getRankNo());
+            result.put("alive", comp.getStatus() == MttCompetitor.STATUS_ALIVE);
+            result.put("roomId", comp.getRoomId());
+            result.put("seatNo", comp.getSeatNo());
+            result.put("rewardAmount", comp.getRewardAmount());
+            long aliveCount = competitorRepository.countByMatchIdAndStatus(matchId, MttCompetitor.STATUS_ALIVE);
+            result.put("aliveCount", aliveCount);
+        }
+        return BaseResponse.success(result);
+    }
+}

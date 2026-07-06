@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: chexuan-mtt
+
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+    default-property-inclusion: non_null
+
+  # 与主服共库（账务真相源在 MySQL）
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://111.170.34.80:3306/chexuan_game?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: Fz2025qq@
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 30
+      connection-timeout: 30000
+
+  jpa:
+    database: mysql
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      # 只会建/改本工程映射的 mtt_* / ledger_entry 表，不碰主服其它表
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect.storage_engine: innodb
+
+server:
+  port: 8081
+
+# ========================================
+# 比赛服专用配置
+# ========================================
+mtt:
+  # 主服（牌局执行器）内部接口
+  game-server:
+    base-url: http://127.0.0.1:9000
+  # 服务间共享 token（主服 application.yml 的 mtt.token 必须一致）
+  internal-token: cx-mtt-internal-2026
+  # 发奖失败重试上限（超过后告警人工介入）
+  payout-max-retry: 3
+
+logging:
+  level:
+    com.chexuan.mtt: info
+  file:
+    name: /www/chexuan-logs/chexuan-mtt.log
+    max-size: 50MB
+    max-history: 7
