@@ -1,0 +1,8 @@
+target/
+*.class
+.idea/
+*.iml
+*.log
+
+# 部署密钥/密码等敏感配置，不进 git（复制 deploy.conf.example.ps1 为 deploy.conf.ps1 后填真实值）
+deploy/deploy.conf.ps1

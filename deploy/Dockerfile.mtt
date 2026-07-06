@@ -1,0 +1,12 @@
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+COPY chexuan-mtt.jar /app/app.jar
+
+ENV JAVA_OPTS="-Xms256m -Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+ENV TZ=Asia/Shanghai
+
+EXPOSE 8081
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Duser.timezone=Asia/Shanghai -jar /app/app.jar"]

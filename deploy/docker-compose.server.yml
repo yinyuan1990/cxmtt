@@ -1,0 +1,153 @@
+name: chexuan
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: chexuan-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Fz2025qq@
+      MYSQL_DATABASE: chexuan_game
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+      TZ: Asia/Shanghai
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=1000
+      - --innodb_buffer_pool_size=512M
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pFz2025qq@"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [chexuan-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: chexuan-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "Fz2026qq@"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Fz2026qq@", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [chexuan-net]
+
+  minio:
+    image: minio/minio:latest
+    container_name: chexuan-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "19010:9000"
+      - "19011:9001"
+    volumes:
+      - ./data/minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [chexuan-net]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    image: chexuan-app:latest
+    container_name: chexuan-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/chexuan_game?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true&useServerPrepStmts=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: Fz2025qq@
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: Fz2026qq@
+      SPRING_DATA_REDIS_DATABASE: "0"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_EXTERNAL_ENDPOINT: http://47.122.115.33:19010
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: chexuan-chat
+      FILE_UPLOAD_PATH: /opt/header
+      FILE_UPLOAD_URL_PREFIX: https://cxstatic.cocoaihj.com
+      MTT_BASE_URL: http://mtt:8081
+      MTT_TOKEN: cx-mtt-internal-2026
+    volumes:
+      - ./shared/header:/opt/header
+      - ./logs:/www/chexuan-logs
+    ports:
+      - "18091:9000"
+    networks: [chexuan-net]
+
+  # MTT 比赛服（赛事大脑，独立 jar；不发布宿主机端口，只在 chexuan-net 内部与 app 互通）
+  mtt:
+    build:
+      context: .
+      dockerfile: Dockerfile.mtt
+    image: chexuan-mtt:latest
+    container_name: chexuan-mtt
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/chexuan_game?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: Fz2025qq@
+      # Spring 环境变量绑定规则：去掉属性名里的横杠（mtt.game-server.base-url → MTT_GAMESERVER_BASEURL）
+      MTT_GAMESERVER_BASEURL: http://app:9000
+      MTT_INTERNALTOKEN: cx-mtt-internal-2026
+    volumes:
+      - ./logs:/www/chexuan-logs
+    networks: [chexuan-net]
+
+  nginx:
+    image: nginx:alpine
+    container_name: chexuan-nginx
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "8088:80"
+      - "9888:9888"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./admin-dist:/usr/share/nginx/admin:ro
+      - ./shared/header:/opt/header:ro
+      - ./shared/game-update:/opt/game-update:ro
+      - ./logs/nginx:/var/log/nginx
+    networks: [chexuan-net]
+
+networks:
+  chexuan-net:
+    name: chexuan-net
+    driver: bridge
