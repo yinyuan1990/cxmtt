@@ -56,18 +56,22 @@ public class MatchLifecycleService {
         if (match.getLevelTable() == null || match.getLevelTable().isEmpty()) {
             match.setLevelTable(JSON.toJSONString(DEFAULT_LEVEL_TABLE));
         }
-        if (match.getRewardRanking() == null || match.getRewardRanking().isEmpty()) {
-            match.setRewardRanking("[50,30,20]");
-        }
         // ⭐ 报名货币由赛事类型强制推导（金币赛=GOLD，钻石赛/实物赛=DIAMOND），不信任入参
         if (match.getRewardType() == null) {
             match.setRewardType(MttMatch.REWARD_GOLD);
         }
         match.setEntryCurrency(MttMatch.entryCurrencyOf(match.getRewardType()));
-        // 实物赛必须配奖品清单（按名次可配多件，对齐德州 mtt_reward）
-        if (match.getRewardType() == MttMatch.REWARD_PRIZE
-                && (match.getPrizeList() == null || match.getPrizeList().isBlank())) {
-            throw new IllegalStateException("实物赛必须配置奖品清单 prizeList（按名次，可配多件）");
+        if (match.getRewardType() == MttMatch.REWARD_PRIZE) {
+            // 实物赛必须配奖品清单（按名次可配多件，对齐德州 mtt_reward）；记分牌纯虚拟可自由配置
+            if (match.getPrizeList() == null || match.getPrizeList().isBlank()) {
+                throw new IllegalStateException("实物赛必须配置奖品清单 prizeList（按名次，可配多件）");
+            }
+        } else {
+            // ⭐ 金币赛/钻石赛：记分牌即货币 —— 强制 initialScore = entryFee（1记分牌=1金币/钻石）
+            if (match.getEntryFee() == null || match.getEntryFee() <= 0) {
+                throw new IllegalStateException("金币赛/钻石赛报名费必须大于 0（报名费即初始记分牌）");
+            }
+            match.setInitialScore(match.getEntryFee());
         }
         match.setStatus(MttMatch.STATUS_CREATE);
         MttMatch saved = matchRepository.save(match);

@@ -147,9 +147,16 @@ public class HandReportService {
         rebalanceService.checkAndRebalance(match, ctx, alive);
     }
 
+    /**
+     * 进奖励圈通知（363）—— 冠军通吃定版：
+     *   实物赛：存活人数首次 ≤ prizeList 配置的名次数（进圈=有奖品拿）；
+     *   金币赛/钻石赛：冠军通吃无奖励圈概念，改为剩 2 人时通知「决赛对决」。
+     */
     private void notifyRewardCircleIfNeeded(MttMatch match, MatchContext ctx, List<MttCompetitor> alive) {
         if (ctx.isRewardCircleNotified()) return;
-        int rewardRankCount = parseRewardCount(match.getRewardRanking());
+        int rewardRankCount = match.getRewardType() != null && match.getRewardType() == MttMatch.REWARD_PRIZE
+                ? parsePrizeRankCount(match.getPrizeList())
+                : 2; // 金币/钻石赛：剩2人=决赛圈
         if (rewardRankCount <= 0 || alive.size() > rewardRankCount) return;
 
         ctx.setRewardCircleNotified(true);
@@ -158,7 +165,7 @@ public class HandReportService {
         data.put("aliveCount", alive.size());
         gameServer.broadcastToUsers(alive.stream().map(MttCompetitor::getUserId).toList(),
                 MttMsgType.REWARD_CIRCLE, data);
-        log.info("进入奖励圈: match={}, alive={}", match.getId(), alive.size());
+        log.info("进入奖励圈/决赛圈: match={}, alive={}", match.getId(), alive.size());
     }
 
     private void finishMatch(MttMatch match, MatchContext ctx, List<MttCompetitor> alive) {
@@ -188,9 +195,15 @@ public class HandReportService {
         payoutService.createPayoutBatch(match);
     }
 
-    public static int parseRewardCount(String rewardRankingJson) {
+    /** 实物赛奖品清单里配置的名次数（去重 rank） */
+    public static int parsePrizeRankCount(String prizeListJson) {
         try {
-            return JSON.parseArray(rewardRankingJson).size();
+            JSONArray arr = JSON.parseArray(prizeListJson);
+            Set<Integer> ranks = new HashSet<>();
+            for (int i = 0; i < arr.size(); i++) {
+                ranks.add(arr.getJSONObject(i).getIntValue("rank"));
+            }
+            return ranks.size();
         } catch (Exception e) {
             return 0;
         }

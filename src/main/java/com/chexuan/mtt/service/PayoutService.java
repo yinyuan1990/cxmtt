@@ -15,14 +15,17 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 
 /**
- * 奖励结算（规划 §11，2026-07 货币定版）
+ * 奖励结算（规划 §11，2026-07 冠军通吃定版）
  *
- * 奖池公式（一期无重购/猎人）: totalBonus = participants × entryFee + initialPool
- * 奖励类型（§11.2.5）：
- *   1 金币赛 → 报名扣金币，奖池按 rewardRanking 发金币（ledger GOLD，逐笔幂等，心跳断点续跑）
- *   2 钻石赛 → 报名扣钻石，奖池按 rewardRanking 发钻石（ledger DIAMOND）
- *   3 实物赛 → 报名扣钻石(平台留存)，记分牌纯内存；按名次生成 mtt_prize_grant 发放单，
- *              玩家填收货地址 → 运营后台派送核销。不走 ledger 金额，无货币奖池分配。
+ * 金币赛/钻石赛（记分牌即货币）：
+ *   输赢在牌局中已通过记分牌流动完成（输家的钱被赢家赢走）；打到只剩冠军时
+ *   全场记分牌集中在冠军手里 → 终局只有一笔兑付：冠军把记分牌换回货币，
+ *   金额 = participants × entryFee + initialPool（ledger 幂等，心跳断点续跑）。
+ *   其余名次只记录排名，不发钱。
+ *
+ * 实物赛：
+ *   报名钻石=平台留存，记分牌纯内存；按名次生成 mtt_prize_grant 发放单（可多件），
+ *   玩家填收货地址 → 运营后台派送核销。不走 ledger 金额。
  */
 @Slf4j
 @Service
@@ -106,25 +109,21 @@ public class PayoutService {
                 gameServer.broadcastToUsers(List.of(comp.getUserId()), MttMsgType.REWARD_ARRIVED, notice);
             }
         } else {
-            // 金币赛/钻石赛：奖池按 rewardRanking 比例切分
-            List<Integer> percents = parsePercents(match.getRewardRanking());
+            // ⭐ 金币赛/钻石赛（冠军通吃）：全场记分牌已集中在冠军手里，
+            //   终局唯一一笔兑付 = 冠军记分牌换回货币（按公式口径，不读桌面筹码）
             String currency = match.getRewardType() == MttMatch.REWARD_DIAMOND
                     ? LedgerEntry.CURRENCY_DIAMOND : LedgerEntry.CURRENCY_GOLD;
 
-            for (int rank = 1; rank <= percents.size(); rank++) {
-                MttCompetitor comp = byRank.get(rank);
-                if (comp == null) continue; // 并列名次空档
-
-                comp.setIsReward(true);
-                long amount = totalBonus * percents.get(rank - 1) / 100; // 向下取整（对齐德州）
-                if (amount <= 0) continue;
-                comp.setRewardAmount(amount);
-                competitorRepository.save(comp);
+            MttCompetitor champion = byRank.get(1);
+            if (champion != null && totalBonus > 0) {
+                champion.setIsReward(true);
+                champion.setRewardAmount(totalBonus);
+                competitorRepository.save(champion);
 
                 Map<String, Object> d = new HashMap<>();
-                d.put("rank", rank);
-                d.put("userId", comp.getUserId());
-                d.put("amount", amount);
+                d.put("rank", 1);
+                d.put("userId", champion.getUserId());
+                d.put("amount", totalBonus);
                 d.put("currency", currency);
                 detail.add(d);
             }
@@ -239,11 +238,4 @@ public class PayoutService {
         return r;
     }
 
-    private List<Integer> parsePercents(String rewardRankingJson) {
-        try {
-            return JSON.parseArray(rewardRankingJson, Integer.class);
-        } catch (Exception e) {
-            return List.of(50, 30, 20);
-        }
-    }
 }

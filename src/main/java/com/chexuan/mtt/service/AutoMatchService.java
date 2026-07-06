@@ -92,7 +92,6 @@ public class AutoMatchService {
         m.setUpgradeMinutes(t.getIntValue("upgradeMinutes", 10));
         m.setLevelTable(t.getString("levelTable"));
         m.setRewardType(t.getIntValue("rewardType", MttMatch.REWARD_GOLD));
-        m.setRewardRanking(t.getString("rewardRanking"));
         m.setPrizeList(t.getString("prizeList"));
         m.setInitialPool(t.getLongValue("initialPool", 0L));
         m.setRuleTemplate(t.getString("ruleTemplate"));

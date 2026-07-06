@@ -26,10 +26,13 @@ public class MttMatch {
     public static final int STATUS_DISMISS = 3;
 
     /**
-     * ⭐ 赛事类型与货币绑定（2026-07 定版）：
-     *   1 金币赛：报名扣金币(user.gold, 钻石1:N兑换)，奖池发金币 —— 记分牌背后是金币
-     *   2 钻石赛：报名扣钻石(user.diamond)，奖池发钻石 —— 记分牌背后是钻石
-     *   3 实物赛：报名扣钻石，记分牌纯虚拟(仅内存计分)，按名次发实物(prizeList) + 玩家填收货地址后台派送
+     * ⭐ 赛事类型与货币绑定（2026-07 定版，冠军通吃模型）：
+     *   1 金币赛：报名扣金币(user.gold, 钻石1:N兑换)，记分牌=金币(报名费即初始记分牌,1:1)。
+     *             输的钱在牌局中已被对手赢走；打到只剩冠军时全场记分牌归冠军，
+     *             终局兑付=冠军把记分牌换回金币(participants×entryFee+initialPool)。其余名次只显示排名。
+     *   2 钻石赛：同上，货币为钻石(user.diamond)，记分牌=钻石。
+     *   3 实物赛：报名扣钻石(平台留存)，记分牌纯虚拟(仅内存计分)，
+     *             按名次发实物(prizeList,可多件) + 玩家填收货地址后台派送。
      */
     public static final int REWARD_GOLD = 1;
     public static final int REWARD_DIAMOND = 2;
@@ -79,9 +82,10 @@ public class MttMatch {
     private String entryCurrency = "GOLD";
 
     /**
-     * 初始记分牌（比赛桌上的筹码，纯比赛内计分不落玩家钱包）：
-     *   金币赛/钻石赛的记分牌只是奖池货币的"比赛内表现形式"，输赢最终通过奖池发放兑现；
-     *   实物赛的记分牌是纯内存字段，比赛结束即作废，赢家拿实物。
+     * 初始记分牌：
+     *   金币赛/钻石赛：记分牌即货币 —— 创建时强制 initialScore = entryFee（1记分牌=1金币/钻石），
+     *                  牌局中的输赢就是钱的流动，终局冠军兑付全部记分牌；
+     *   实物赛：纯内存计分字段，比赛结束即作废，可自由配置。
      */
     @Column(name = "initial_score", nullable = false)
     private Long initialScore = 10000L;
@@ -112,7 +116,11 @@ public class MttMatch {
     @Column(name = "reward_type", nullable = false)
     private Integer rewardType = REWARD_GOLD;
 
-    /** 奖励圈名次比例 JSON：[50,30,20] = 前3名分50/30/20% */
+    /**
+     * @deprecated 名次比例分奖已废弃（2026-07 冠军通吃定版）：金币/钻石赛冠军兑付全部记分牌，
+     * 实物赛按 prizeList 名次发实物。字段保留兼容旧数据，不再参与结算。
+     */
+    @Deprecated
     @Column(name = "reward_ranking", columnDefinition = "TEXT")
     private String rewardRanking;
 
