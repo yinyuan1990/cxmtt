@@ -84,14 +84,14 @@ public class AutoMatchService {
         m.setName(prefix + " " + new SimpleDateFormat("HH:mm").format(new Date(startTime)) + " 场");
         m.setStartTime(startTime);
         m.setEntryFee(t.getLongValue("entryFee", 1000L));
-        m.setEntryCurrency(t.getString("entryCurrency") != null ? t.getString("entryCurrency") : "SCORE");
+        // entryCurrency 由 rewardType 推导（lifecycleService.create 强制覆写），模板无需配置
         m.setInitialScore(t.getLongValue("initialScore", 10000L));
         m.setSeatNum(t.getIntValue("seatNum", 8));
         m.setLowerLimit(t.getIntValue("lowerLimit", 4));
         m.setUpperLimit(t.getIntValue("upperLimit", 200));
         m.setUpgradeMinutes(t.getIntValue("upgradeMinutes", 10));
         m.setLevelTable(t.getString("levelTable"));
-        m.setRewardType(t.getIntValue("rewardType", MttMatch.REWARD_SCORE));
+        m.setRewardType(t.getIntValue("rewardType", MttMatch.REWARD_GOLD));
         m.setRewardRanking(t.getString("rewardRanking"));
         m.setPrizeList(t.getString("prizeList"));
         m.setInitialPool(t.getLongValue("initialPool", 0L));

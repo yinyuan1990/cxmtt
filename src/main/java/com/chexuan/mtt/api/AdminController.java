@@ -175,7 +175,37 @@ public class AdminController {
         return BaseResponse.success(r);
     }
 
-    /** 实物核销兑付 */
+    /**
+     * ⭐ 实物派送：玩家填完收货地址后，运营发货并记录快递单号/备注。
+     * body:{grantId, shipNote?, operator?}
+     */
+    @PostMapping("/prizeShip")
+    public BaseResponse<MttPrizeGrant> prizeShip(@RequestBody Map<String, Object> body) {
+        Long grantId = Long.valueOf(body.get("grantId").toString());
+        String operator = body.getOrDefault("operator", "admin").toString();
+        String shipNote = body.get("shipNote") != null ? body.get("shipNote").toString() : null;
+        MttPrizeGrant grant = prizeGrantRepository.findById(grantId).orElse(null);
+        if (grant == null) return BaseResponse.error(404, "发放单不存在");
+        if (Boolean.TRUE.equals(grant.getIsVirtual())) {
+            return BaseResponse.error(400, "虚拟奖品无需派送，直接核销即可");
+        }
+        if (!MttPrizeGrant.STATUS_GRANTED.equals(grant.getStatus())) {
+            return BaseResponse.error(400, "当前状态不可派送: " + grant.getStatus());
+        }
+        if (grant.getReceiverAddress() == null || grant.getReceiverAddress().isBlank()) {
+            return BaseResponse.error(400, "玩家尚未填写收货地址");
+        }
+        grant.setStatus(MttPrizeGrant.STATUS_SHIPPED);
+        grant.setShipNote(shipNote);
+        grant.setShippedAt(LocalDateTime.now());
+        grant.setOperator(operator);
+        prizeGrantRepository.save(grant);
+        log.info("实物派送: grant={}, match={}, user={}, prize={}, note={}, by={}",
+                grantId, grant.getMatchId(), grant.getUserId(), grant.getPrizeName(), shipNote, operator);
+        return BaseResponse.success(grant);
+    }
+
+    /** 实物核销兑付（虚拟奖品直接核销；实物一般在派送签收后核销） */
     @PostMapping("/prizeRedeem")
     public BaseResponse<MttPrizeGrant> prizeRedeem(@RequestBody Map<String, Object> body) {
         Long grantId = Long.valueOf(body.get("grantId").toString());

@@ -15,13 +15,14 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 
 /**
- * 奖励结算（规划 §11）
+ * 奖励结算（规划 §11，2026-07 货币定版）
  *
  * 奖池公式（一期无重购/猎人）: totalBonus = participants × entryFee + initialPool
  * 奖励类型（§11.2.5）：
- *   1 积分 / 2 钻石 → ledger 逐笔幂等入账（发奖批次状态机，心跳断点续跑）
- *   3 实物         → mtt_prize_grant 发放单（运营核销）；名次命中 prizeList 发实物，
- *                    未命中的奖励圈名次发积分（货币奖池只在货币名次间分）
+ *   1 金币赛 → 报名扣金币，奖池按 rewardRanking 发金币（ledger GOLD，逐笔幂等，心跳断点续跑）
+ *   2 钻石赛 → 报名扣钻石，奖池按 rewardRanking 发钻石（ledger DIAMOND）
+ *   3 实物赛 → 报名扣钻石(平台留存)，记分牌纯内存；按名次生成 mtt_prize_grant 发放单，
+ *              玩家填收货地址 → 运营后台派送核销。不走 ledger 金额，无货币奖池分配。
  */
 @Slf4j
 @Service
@@ -45,7 +46,9 @@ public class PayoutService {
         }
 
         int participants = match.getParticipants() != null ? match.getParticipants() : 0;
-        long totalBonus = participants * match.getEntryFee() + match.getInitialPool();
+        // 实物赛无货币奖池（报名钻石=平台留存，奖励只有实物）；金币/钻石赛按公式
+        long totalBonus = match.getRewardType() == MttMatch.REWARD_PRIZE
+                ? 0L : participants * match.getEntryFee() + match.getInitialPool();
         match.setTotalBonus(totalBonus);
         matchRepository.save(match);
 
@@ -55,9 +58,12 @@ public class PayoutService {
             if (c.getRankNo() != null) byRank.put(c.getRankNo(), c);
         }
 
-        // 实物名次集合
-        Map<Integer, JSONObject> prizeByRank = new HashMap<>();
-        if (match.getRewardType() == MttMatch.REWARD_PRIZE && match.getPrizeList() != null) {
+        List<Map<String, Object>> detail = new ArrayList<>();
+
+        if (match.getRewardType() == MttMatch.REWARD_PRIZE) {
+            // ⭐ 实物赛：按名次发实物（对齐德州 mtt_reward——每个名次一条，可配多件）
+            //   记分牌纯内存字段，比赛结束作废；发放单等玩家填收货地址后运营派送
+            Map<Integer, JSONObject> prizeByRank = new HashMap<>();
             try {
                 JSONArray arr = JSON.parseArray(match.getPrizeList());
                 for (int i = 0; i < arr.size(); i++) {
@@ -67,23 +73,14 @@ public class PayoutService {
             } catch (Exception e) {
                 log.error("prizeList 解析失败: match={}", match.getId(), e);
             }
-        }
 
-        // 货币奖比例（§11.2.5 组合规则：实物名次不占奖池百分比，奖池只在货币名次间分）
-        List<Integer> percents = parsePercents(match.getRewardRanking());
-        String currency = match.getRewardType() == MttMatch.REWARD_DIAMOND
-                ? LedgerEntry.CURRENCY_DIAMOND : LedgerEntry.CURRENCY_SCORE;
+            for (Map.Entry<Integer, JSONObject> e : prizeByRank.entrySet()) {
+                int rank = e.getKey();
+                MttCompetitor comp = byRank.get(rank);
+                if (comp == null) continue; // 并列名次空档
 
-        List<Map<String, Object>> detail = new ArrayList<>();
-        for (int rank = 1; rank <= percents.size(); rank++) {
-            MttCompetitor comp = byRank.get(rank);
-            if (comp == null) continue; // 并列名次空档
-
-            comp.setIsReward(true);
-
-            JSONObject prize = prizeByRank.get(rank);
-            if (prize != null) {
-                // 实物：发放单
+                JSONObject prize = e.getValue();
+                comp.setIsReward(true);
                 MttPrizeGrant grant = new MttPrizeGrant();
                 grant.setMatchId(match.getId());
                 grant.setUserId(comp.getUserId());
@@ -99,20 +96,38 @@ public class PayoutService {
                 d.put("userId", comp.getUserId());
                 d.put("prizeName", grant.getPrizeName());
                 detail.add(d);
-                continue;
+
+                // 367 到账通知（实物：提示去「我的奖品」填收货地址）
+                Map<String, Object> notice = new HashMap<>();
+                notice.put("matchId", match.getId());
+                notice.put("rank", rank);
+                notice.put("prizeName", grant.getPrizeName());
+                notice.put("needAddress", !Boolean.TRUE.equals(grant.getIsVirtual()));
+                gameServer.broadcastToUsers(List.of(comp.getUserId()), MttMsgType.REWARD_ARRIVED, notice);
             }
+        } else {
+            // 金币赛/钻石赛：奖池按 rewardRanking 比例切分
+            List<Integer> percents = parsePercents(match.getRewardRanking());
+            String currency = match.getRewardType() == MttMatch.REWARD_DIAMOND
+                    ? LedgerEntry.CURRENCY_DIAMOND : LedgerEntry.CURRENCY_GOLD;
 
-            long amount = totalBonus * percents.get(rank - 1) / 100; // 向下取整（对齐德州）
-            if (amount <= 0) continue;
-            comp.setRewardAmount(amount);
-            competitorRepository.save(comp);
+            for (int rank = 1; rank <= percents.size(); rank++) {
+                MttCompetitor comp = byRank.get(rank);
+                if (comp == null) continue; // 并列名次空档
 
-            Map<String, Object> d = new HashMap<>();
-            d.put("rank", rank);
-            d.put("userId", comp.getUserId());
-            d.put("amount", amount);
-            d.put("currency", currency);
-            detail.add(d);
+                comp.setIsReward(true);
+                long amount = totalBonus * percents.get(rank - 1) / 100; // 向下取整（对齐德州）
+                if (amount <= 0) continue;
+                comp.setRewardAmount(amount);
+                competitorRepository.save(comp);
+
+                Map<String, Object> d = new HashMap<>();
+                d.put("rank", rank);
+                d.put("userId", comp.getUserId());
+                d.put("amount", amount);
+                d.put("currency", currency);
+                detail.add(d);
+            }
         }
 
         MttPayoutBatch batch = new MttPayoutBatch();
@@ -203,6 +218,7 @@ public class PayoutService {
         }
         long expectPool = match.getTotalBonus() != null ? match.getTotalBonus()
                 : feeSum - refundSum + match.getInitialPool();
+        boolean prizeMatch = match.getRewardType() != null && match.getRewardType() == MttMatch.REWARD_PRIZE;
 
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("matchId", matchId);
@@ -211,10 +227,15 @@ public class PayoutService {
         r.put("rewardPayoutSum", rewardSum);
         r.put("initialPool", match.getInitialPool());
         r.put("totalBonus", match.getTotalBonus());
-        r.put("invariant_reward_le_pool", rewardSum <= expectPool);
-        r.put("invariant_pool_eq_fee", match.getTotalBonus() == null
+        // 实物赛：报名钻石=平台留存(不构成货币奖池)，无货币发奖 → 只校验 rewardSum==0
+        r.put("invariant_reward_le_pool", prizeMatch ? rewardSum == 0 : rewardSum <= expectPool);
+        r.put("invariant_pool_eq_fee", prizeMatch
+                || match.getTotalBonus() == null
                 || match.getStatus() == MttMatch.STATUS_DISMISS
                 || feeSum - refundSum + match.getInitialPool() == match.getTotalBonus());
+        if (prizeMatch) {
+            r.put("platformRevenue", feeSum - refundSum); // 实物赛平台留存(钻石)
+        }
         return r;
     }
 

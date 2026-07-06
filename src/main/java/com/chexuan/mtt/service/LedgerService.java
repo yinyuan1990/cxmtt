@@ -21,7 +21,7 @@ import java.util.List;
  *   3. 「余额变更 + 分录置 DONE」同一个事务；失败标记 FAILED 用独立事务持久化（可重试可审计）；
  *   4. 扣款（amount<0）余额不足即失败，不允许负余额。
  *
- * 余额落点：SCORE → club_member.score（需 clubId）；DIAMOND → user.diamond
+ * 余额落点：SCORE → club_member.score（需 clubId）；DIAMOND → user.diamond；GOLD → user.gold
  */
 @Slf4j
 @Service
@@ -160,6 +160,20 @@ public class LedgerService {
             }
             updated = jdbcTemplate.update(
                     "UPDATE user SET diamond = diamond + ? WHERE id=?",
+                    amount, entry.getUserId());
+        } else if (LedgerEntry.CURRENCY_GOLD.equals(entry.getCurrency())) {
+            balanceBefore = jdbcTemplate.query(
+                    "SELECT gold FROM user WHERE id=? FOR UPDATE",
+                    rs -> rs.next() ? rs.getLong(1) : null,
+                    entry.getUserId());
+            if (balanceBefore == null) {
+                throw new BusinessFailure("用户不存在: " + entry.getUserId());
+            }
+            if (amount < 0 && balanceBefore + amount < 0) {
+                throw new BusinessFailure("金币不足: 余额" + balanceBefore + ", 需" + (-amount) + "(可用钻石兑换)");
+            }
+            updated = jdbcTemplate.update(
+                    "UPDATE user SET gold = gold + ? WHERE id=?",
                     amount, entry.getUserId());
         } else {
             throw new BusinessFailure("未知货币: " + entry.getCurrency());

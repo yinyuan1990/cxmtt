@@ -34,6 +34,8 @@ public class LedgerEntry {
 
     public static final String CURRENCY_SCORE = "SCORE";
     public static final String CURRENCY_DIAMOND = "DIAMOND";
+    /** ⭐ 金币：钻石单向兑换而来（user.gold），金币赛报名/发奖货币 */
+    public static final String CURRENCY_GOLD = "GOLD";
 
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_DONE = "DONE";

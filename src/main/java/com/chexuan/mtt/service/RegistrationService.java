@@ -178,10 +178,21 @@ public class RegistrationService {
         for (Long uid : candidates) {
             try {
                 // ③ 垫资：补足报名费（运营给机器人上分，不进比赛 ledger 口径）
-                if (match.getEntryFee() > 0 && "SCORE".equals(match.getEntryCurrency())) {
-                    jdbcTemplate.update(
-                            "UPDATE club_member SET score = GREATEST(score, ?) WHERE club_id=? AND user_id=? AND status=1",
-                            match.getEntryFee(), match.getClubId(), uid);
+                //    金币赛补 user.gold，钻石赛/实物赛补 user.diamond
+                if (match.getEntryFee() > 0) {
+                    if ("GOLD".equals(match.getEntryCurrency())) {
+                        jdbcTemplate.update(
+                                "UPDATE user SET gold = GREATEST(gold, ?) WHERE id=?",
+                                match.getEntryFee(), uid);
+                    } else if ("DIAMOND".equals(match.getEntryCurrency())) {
+                        jdbcTemplate.update(
+                                "UPDATE user SET diamond = GREATEST(diamond, ?) WHERE id=?",
+                                match.getEntryFee(), uid);
+                    } else {
+                        jdbcTemplate.update(
+                                "UPDATE club_member SET score = GREATEST(score, ?) WHERE club_id=? AND user_id=? AND status=1",
+                                match.getEntryFee(), match.getClubId(), uid);
+                    }
                 }
                 register(match.getId(), uid);
                 registered++;

@@ -59,6 +59,16 @@ public class MatchLifecycleService {
         if (match.getRewardRanking() == null || match.getRewardRanking().isEmpty()) {
             match.setRewardRanking("[50,30,20]");
         }
+        // ⭐ 报名货币由赛事类型强制推导（金币赛=GOLD，钻石赛/实物赛=DIAMOND），不信任入参
+        if (match.getRewardType() == null) {
+            match.setRewardType(MttMatch.REWARD_GOLD);
+        }
+        match.setEntryCurrency(MttMatch.entryCurrencyOf(match.getRewardType()));
+        // 实物赛必须配奖品清单（按名次可配多件，对齐德州 mtt_reward）
+        if (match.getRewardType() == MttMatch.REWARD_PRIZE
+                && (match.getPrizeList() == null || match.getPrizeList().isBlank())) {
+            throw new IllegalStateException("实物赛必须配置奖品清单 prizeList（按名次，可配多件）");
+        }
         match.setStatus(MttMatch.STATUS_CREATE);
         MttMatch saved = matchRepository.save(match);
         log.info("比赛创建: id={}, name={}, start={}, club={}", saved.getId(), saved.getName(),

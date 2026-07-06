@@ -129,11 +129,52 @@ public class InternalPlayerController {
         return BaseResponse.success(result);
     }
 
-    /** 146 我的奖品（实物赛发放单：待核销/已兑付） */
+    /** 146 我的奖品（实物赛发放单：待填地址/待派送/已派送/已兑付） */
     @PostMapping("/myPrizes")
     public BaseResponse<Object> myPrizes(@RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(body.get("userId").toString());
         return BaseResponse.success(prizeGrantRepository.findByUserIdOrderByIdDesc(userId));
+    }
+
+    /**
+     * 148 填写收货地址（实物奖）：GRANTED 状态下可填/可改；派送后锁定。
+     * body:{grantId, receiverName, receiverPhone, receiverAddress}
+     */
+    @PostMapping("/fillPrizeAddress")
+    public BaseResponse<Object> fillPrizeAddress(@RequestBody Map<String, Object> body) {
+        try {
+            Long userId = Long.valueOf(body.get("userId").toString());
+            Long grantId = Long.valueOf(body.get("grantId").toString());
+            String name = String.valueOf(body.getOrDefault("receiverName", "")).trim();
+            String phone = String.valueOf(body.getOrDefault("receiverPhone", "")).trim();
+            String address = String.valueOf(body.getOrDefault("receiverAddress", "")).trim();
+            if (name.isEmpty() || phone.isEmpty() || address.isEmpty()) {
+                return BaseResponse.error(400, "收货人/电话/地址均不能为空");
+            }
+            if (name.length() > 32 || phone.length() > 20 || address.length() > 256) {
+                return BaseResponse.error(400, "收货信息过长");
+            }
+
+            var grant = prizeGrantRepository.findById(grantId).orElse(null);
+            if (grant == null || !grant.getUserId().equals(userId)) {
+                return BaseResponse.error(404, "奖品发放单不存在");
+            }
+            if (Boolean.TRUE.equals(grant.getIsVirtual())) {
+                return BaseResponse.error(400, "虚拟奖品无需收货地址");
+            }
+            if (!com.chexuan.mtt.entity.MttPrizeGrant.STATUS_GRANTED.equals(grant.getStatus())) {
+                return BaseResponse.error(400, "奖品已派送，地址不可修改，如需变更请联系客服");
+            }
+            grant.setReceiverName(name);
+            grant.setReceiverPhone(phone);
+            grant.setReceiverAddress(address);
+            grant.setAddressFilledAt(java.time.LocalDateTime.now());
+            prizeGrantRepository.save(grant);
+            log.info("实物奖收货地址已填: grant={}, user={}, prize={}", grantId, userId, grant.getPrizeName());
+            return BaseResponse.success("地址已保存，等待平台派送");
+        } catch (Exception e) {
+            return BaseResponse.error(400, e.getMessage());
+        }
     }
 
     /**
