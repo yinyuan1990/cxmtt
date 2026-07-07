@@ -75,7 +75,10 @@ public class MttMatch {
     @Column(name = "entry_open_time")
     private Long entryOpenTime;
 
-    /** 报名费（分） */
+    /**
+     * 报名费——⭐货币原生单位，无换算：
+     *   金币赛=金币个数(1钻=1000金币,填1000=1000金币)；钻石赛/实物赛=钻石颗数(填10=扣10颗钻石)
+     */
     @Column(name = "entry_fee", nullable = false)
     private Long entryFee = 0L;
 
@@ -145,7 +148,7 @@ public class MttMatch {
     @Column(name = "prize_list", columnDefinition = "TEXT")
     private String prizeList;
 
-    /** 固定奖池（运营预置，分） */
+    /** 固定奖池（运营预置，货币原生单位：金币赛=金币个/钻石赛=钻石颗） */
     @Column(name = "initial_pool", nullable = false)
     private Long initialPool = 0L;
 

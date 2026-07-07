@@ -61,7 +61,7 @@ public class LedgerEntry {
     @Column(name = "currency", length = 16, nullable = false)
     private String currency = CURRENCY_SCORE;
 
-    /** 正=给玩家，负=扣玩家（分） */
+    /** 正=给玩家，负=扣玩家（货币原生单位：GOLD=金币个 / DIAMOND=钻石颗 / SCORE=积分分） */
     @Column(name = "amount", nullable = false)
     private Long amount;
 
