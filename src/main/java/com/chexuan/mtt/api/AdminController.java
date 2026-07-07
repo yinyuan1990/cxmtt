@@ -31,6 +31,7 @@ public class AdminController {
     private final LedgerEntryRepository ledgerRepository;
     private final MttPrizeGrantRepository prizeGrantRepository;
     private final MttAutoConfigRepository autoConfigRepository;
+    private final MttPrizeItemRepository prizeItemRepository;
 
     /** 创建比赛（字段=MttMatch，金额入参统一"分"） */
     @PostMapping("/create")
@@ -203,6 +204,46 @@ public class AdminController {
         log.info("实物派送: grant={}, match={}, user={}, prize={}, note={}, by={}",
                 grantId, grant.getMatchId(), grant.getUserId(), grant.getPrizeName(), shipNote, operator);
         return BaseResponse.success(grant);
+    }
+
+    // ==================== ⭐ 实物奖品库（最简 CRUD） ====================
+
+    /** 奖品库列表。body: { all?: true 含下架(管理页用), 默认只返回上架(下拉选择用) } */
+    @PostMapping("/prizeItem/list")
+    public BaseResponse<List<MttPrizeItem>> prizeItemList(@RequestBody(required = false) Map<String, Object> body) {
+        boolean all = body != null && Boolean.parseBoolean(String.valueOf(body.getOrDefault("all", false)));
+        return BaseResponse.success(all
+                ? prizeItemRepository.findAllByOrderByIdDesc()
+                : prizeItemRepository.findByStatusOrderByIdDesc(MttPrizeItem.STATUS_ON));
+    }
+
+    /** 奖品库新增/编辑（带 id=编辑）。body: { id?, name, icon?, detail?, isVirtual?, status? } */
+    @PostMapping("/prizeItem/save")
+    public BaseResponse<MttPrizeItem> prizeItemSave(@RequestBody MttPrizeItem req) {
+        if (req.getName() == null || req.getName().isBlank()) {
+            return BaseResponse.error(400, "奖品名称不能为空");
+        }
+        MttPrizeItem item = req.getId() != null
+                ? prizeItemRepository.findById(req.getId()).orElse(new MttPrizeItem())
+                : new MttPrizeItem();
+        item.setName(req.getName().trim());
+        item.setIcon(req.getIcon());
+        item.setDetail(req.getDetail());
+        item.setIsVirtual(Boolean.TRUE.equals(req.getIsVirtual()));
+        if (req.getStatus() != null) item.setStatus(req.getStatus());
+        MttPrizeItem saved = prizeItemRepository.save(item);
+        log.info("奖品库保存: id={}, name={}, virtual={}, status={}",
+                saved.getId(), saved.getName(), saved.getIsVirtual(), saved.getStatus());
+        return BaseResponse.success(saved);
+    }
+
+    /** 奖品库删除（物理删；已建比赛的 prizeList 是快照不受影响）。body: { id } */
+    @PostMapping("/prizeItem/delete")
+    public BaseResponse<String> prizeItemDelete(@RequestBody Map<String, Object> body) {
+        Long id = Long.valueOf(body.get("id").toString());
+        prizeItemRepository.deleteById(id);
+        log.info("奖品库删除: id={}", id);
+        return BaseResponse.success("已删除");
     }
 
     /** 实物核销兑付（虚拟奖品直接核销；实物一般在派送签收后核销） */
