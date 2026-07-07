@@ -144,12 +144,14 @@ public class RegistrationService {
     /**
      * 自动报名 robotCount 个机器人（开赛前由心跳触发一次）。
      *
-     * 规则：
+     * 规则（2026-07 定版）：
      *   ① 候选=该俱乐部 is_robot=1 的活跃成员；
      *   ② 跨赛去重：已报名其他"报名期/进行中"比赛的机器人不选（对齐德州 sendAi 去重）；
-     *   ③ 报名费照付（先补足机器人俱乐部积分=运营垫资,不进比赛 ledger）——
-     *      保证奖池公式 participants×entryFee 口径不被机器人破坏；
-     *   ④ 机器人牌桌行为由主服 RobotEngine 托管（公平打、不控盘，见主服守卫）。
+     *   ③ ⭐ 机器人只能用【自有余额】报名（金币赛查 user.gold，钻石/实物赛查 user.diamond），
+     *      余额不足的直接不入选——严禁系统凭空垫资！机器人的钱只能由群主在后台转账
+     *      （主服 /admin/mtt/robot/transfer，余额校验+双边流水），全程可查可对账；
+     *   ④ 报名扣费与真人完全同一条 ledger 路径（ENTRY_FEE），奖池口径天然一致；
+     *   ⑤ 机器人牌桌行为由主服 RobotEngine 托管。
      *
      * @return 实际报入数
      */
@@ -162,45 +164,40 @@ public class RegistrationService {
         int space = (int) Math.min(want, Math.max(0, match.getUpperLimit() - already));
         if (space <= 0) return 0;
 
-        // ① 该俱乐部机器人 ② 排除已报任何活跃比赛的
+        // 报名货币对应的余额列（报名费>0 时要求余额充足）
+        String balanceCol = "GOLD".equals(match.getEntryCurrency()) ? "u.gold" : "u.diamond";
+
+        // ① 该俱乐部机器人 ② 排除已报任何活跃比赛的 ③ 自有余额够报名费的
         List<Long> candidates = jdbcTemplate.queryForList(
                 "SELECT cm.user_id FROM club_member cm " +
                 "JOIN user u ON u.id = cm.user_id AND u.is_robot = 1 " +
                 "WHERE cm.club_id = ? AND cm.status = 1 " +
+                "AND " + balanceCol + " >= ? " +
                 "AND cm.user_id NOT IN (" +
                 "  SELECT r.user_id FROM mtt_registration r " +
                 "  JOIN mtt_match m ON m.id = r.match_id AND m.status IN (1,2) " +
                 "  WHERE r.status = 1" +
                 ") ORDER BY RAND() LIMIT " + space,
-                Long.class, match.getClubId());
+                Long.class, match.getClubId(), match.getEntryFee());
 
         int registered = 0;
         for (Long uid : candidates) {
             try {
-                // ③ 垫资：补足报名费（运营给机器人上分，不进比赛 ledger 口径）
-                //    金币赛补 user.gold，钻石赛/实物赛补 user.diamond
-                if (match.getEntryFee() > 0) {
-                    if ("GOLD".equals(match.getEntryCurrency())) {
-                        jdbcTemplate.update(
-                                "UPDATE user SET gold = GREATEST(gold, ?) WHERE id=?",
-                                match.getEntryFee(), uid);
-                    } else if ("DIAMOND".equals(match.getEntryCurrency())) {
-                        jdbcTemplate.update(
-                                "UPDATE user SET diamond = GREATEST(diamond, ?) WHERE id=?",
-                                match.getEntryFee(), uid);
-                    } else {
-                        jdbcTemplate.update(
-                                "UPDATE club_member SET score = GREATEST(score, ?) WHERE club_id=? AND user_id=? AND status=1",
-                                match.getEntryFee(), match.getClubId(), uid);
-                    }
-                }
+                // 与真人同一条报名路径：ledger 扣自有余额，不足会抛错跳过（并发防御）
                 register(match.getId(), uid);
                 registered++;
             } catch (Exception e) {
                 log.warn("机器人报名失败(跳过): match={}, robot={}, err={}", match.getId(), uid, e.getMessage());
             }
         }
-        log.info("比赛机器人自动报名: match={}, 目标={}, 实报={}", match.getId(), want, registered);
+        if (registered < Math.min(want, space)) {
+            log.warn("⚠️ 比赛机器人报名不足: match={}, 目标={}, 实报={} —— 余额充足的机器人不够,请群主在后台" +
+                    "「MTT机器人」页转账补足{}（/admin/mtt/robot/transfer）",
+                    match.getId(), want, registered,
+                    "GOLD".equals(match.getEntryCurrency()) ? "金币" : "钻石");
+        } else {
+            log.info("比赛机器人自动报名: match={}, 目标={}, 实报={}", match.getId(), want, registered);
+        }
         return registered;
     }
 }

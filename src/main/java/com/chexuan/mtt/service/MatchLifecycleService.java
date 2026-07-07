@@ -282,7 +282,7 @@ public class MatchLifecycleService {
 
             Long roomId = gameServer.createTable(match.getId(),
                     match.getName() + "-第" + (t + 1) + "桌", match.getClubId(),
-                    seatNum, level1BaseScore, rules);
+                    seatNum, level1BaseScore, match.getRewardType(), rules);
             ctx.getTableRoomIds().add(roomId);
 
             List<Map<String, Object>> seatList = new ArrayList<>();

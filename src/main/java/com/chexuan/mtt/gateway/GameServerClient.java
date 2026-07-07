@@ -38,13 +38,14 @@ public class GameServerClient {
      * 建比赛桌，返回 roomId
      */
     public Long createTable(Long matchId, String name, Long clubId, int seatNum,
-                            int baseScore, Map<String, Object> ruleTemplate) {
+                            int baseScore, Integer rewardType, Map<String, Object> ruleTemplate) {
         JSONObject body = new JSONObject();
         body.put("matchId", matchId);
         body.put("name", name);
         body.put("clubId", clubId);
         body.put("seatNum", seatNum);
         body.put("baseScore", baseScore);
+        body.put("rewardType", rewardType); // 1金币 2钻石 3实物：主服机器人赢亏配置按类别生效
         body.put("rules", ruleTemplate);
         JSONObject resp = post("/internal/match/createTable", body);
         return resp.getJSONObject("data").getLong("roomId");
