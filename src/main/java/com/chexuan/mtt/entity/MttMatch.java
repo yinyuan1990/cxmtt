@@ -26,13 +26,18 @@ public class MttMatch {
     public static final int STATUS_DISMISS = 3;
 
     /**
-     * ⭐ 赛事类型与货币绑定（2026-07 定版，冠军通吃模型）：
-     *   1 金币赛：报名扣金币(user.gold, 钻石1:N兑换)，记分牌=金币(报名费即初始记分牌,1:1)。
-     *             输的钱在牌局中已被对手赢走；打到只剩冠军时全场记分牌归冠军，
-     *             终局兑付=冠军把记分牌换回金币(participants×entryFee+initialPool)。其余名次只显示排名。
-     *   2 钻石赛：同上，货币为钻石(user.diamond)，记分牌=钻石。
+     * ⭐ 赛事类型与货币绑定（2026-07 四次定版）：
+     *   1 金币赛：报名扣金币(user.gold, 钻石1:N兑换,金币不值钱人人能玩)。
+     *             记分牌=金币(报名费即初始记分牌,1:1)，输赢即钱的流动，
+     *             冠军通吃：终局兑付=participants×entryFee+initialPool。其余名次只显示排名。
+     *   2 钻石赛：报名扣钻石(user.diamond)。⭐记分牌纯虚拟(仅内存计分,自由配置,不然玩不起)。
+     *             奖池=报名费总和−平台手续费(platformFeePercent,建赛时配)+固定奖池initialPool，
+     *             按 rewardRanking 名次比例分给前几名(钻石)。
      *   3 实物赛：报名扣钻石(平台留存)，记分牌纯虚拟(仅内存计分)，
      *             按名次发实物(prizeList,可多件) + 玩家填收货地址后台派送。
+     *
+     *   机器人：每场比赛独立配置（robotCount 是否/多少 + robotWinBias 本场输赢倾向），
+     *          不再走俱乐部级统一配置。
      */
     public static final int REWARD_GOLD = 1;
     public static final int REWARD_DIAMOND = 2;
@@ -83,9 +88,8 @@ public class MttMatch {
 
     /**
      * 初始记分牌：
-     *   金币赛/钻石赛：记分牌即货币 —— 创建时强制 initialScore = entryFee（1记分牌=1金币/钻石），
-     *                  牌局中的输赢就是钱的流动，终局冠军兑付全部记分牌；
-     *   实物赛：纯内存计分字段，比赛结束即作废，可自由配置。
+     *   金币赛：记分牌即金币 —— 创建时强制 initialScore = entryFee（1:1），冠军兑付全部记分牌；
+     *   钻石赛/实物赛：纯内存计分字段，自由配置（默认10000），比赛结束即作废。
      */
     @Column(name = "initial_score", nullable = false)
     private Long initialScore = 10000L;
@@ -117,12 +121,25 @@ public class MttMatch {
     private Integer rewardType = REWARD_GOLD;
 
     /**
-     * @deprecated 名次比例分奖已废弃（2026-07 冠军通吃定版）：金币/钻石赛冠军兑付全部记分牌，
-     * 实物赛按 prizeList 名次发实物。字段保留兼容旧数据，不再参与结算。
+     * 奖励圈名次比例 JSON（⭐仅钻石赛用）：[50,30,20] = 前3名分50/30/20%。
+     * 金币赛冠军通吃不用；实物赛按 prizeList 名次发实物不用。
      */
-    @Deprecated
     @Column(name = "reward_ranking", columnDefinition = "TEXT")
     private String rewardRanking;
+
+    /**
+     * ⭐ 平台手续费百分比（仅钻石赛，建赛时配置，0~50，默认10）：
+     * 奖池 = 报名费总和 × (100−手续费%) / 100 + initialPool
+     */
+    @Column(name = "platform_fee_percent", nullable = false)
+    private Integer platformFeePercent = 10;
+
+    /**
+     * ⭐ 本场机器人输赢倾向（建赛时配置，-100放水 ~ 0公平 ~ +100收割）：
+     * robotCount>0 时生效，建桌时下发主服 RobotEngine。每场独立，不走俱乐部统一配置。
+     */
+    @Column(name = "robot_win_bias", nullable = false)
+    private Integer robotWinBias = 0;
 
     /** 实物赛名次奖品 JSON：[{"rank":1,"prizeName":"...","prizeIcon":"...","isVirtual":false}] */
     @Column(name = "prize_list", columnDefinition = "TEXT")

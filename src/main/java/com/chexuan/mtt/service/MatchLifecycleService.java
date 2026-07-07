@@ -63,17 +63,34 @@ public class MatchLifecycleService {
         }
         match.setEntryCurrency(MttMatch.entryCurrencyOf(match.getRewardType()));
         if (match.getRewardType() == MttMatch.REWARD_PRIZE) {
-            // 实物赛必须配奖品清单（按名次可配多件，对齐德州 mtt_reward）；记分牌纯虚拟可自由配置
+            // 实物赛：必须配奖品清单（按名次可配多件）；记分牌纯虚拟可自由配置
             if (match.getPrizeList() == null || match.getPrizeList().isBlank()) {
                 throw new IllegalStateException("实物赛必须配置奖品清单 prizeList（按名次，可配多件）");
             }
-        } else {
-            // ⭐ 金币赛/钻石赛：记分牌即货币 —— 强制 initialScore = entryFee（1记分牌=1金币/钻石）
+        } else if (match.getRewardType() == MttMatch.REWARD_DIAMOND) {
+            // ⭐ 钻石赛（四次定版）：记分牌纯虚拟自由配置(不然玩不起)；
+            //   奖池=报名费总和−平台手续费+initialPool，按 rewardRanking 名次比例分
             if (match.getEntryFee() == null || match.getEntryFee() <= 0) {
-                throw new IllegalStateException("金币赛/钻石赛报名费必须大于 0（报名费即初始记分牌）");
+                throw new IllegalStateException("钻石赛报名费必须大于 0");
+            }
+            if (match.getInitialScore() == null || match.getInitialScore() < 1000) {
+                match.setInitialScore(10000L);
+            }
+            if (match.getRewardRanking() == null || match.getRewardRanking().isBlank()) {
+                match.setRewardRanking("[50,30,20]");
+            }
+            int fee = match.getPlatformFeePercent() != null ? match.getPlatformFeePercent() : 10;
+            match.setPlatformFeePercent(Math.max(0, Math.min(50, fee)));
+        } else {
+            // ⭐ 金币赛：记分牌即金币 —— 强制 initialScore = entryFee（冠军通吃）
+            if (match.getEntryFee() == null || match.getEntryFee() <= 0) {
+                throw new IllegalStateException("金币赛报名费必须大于 0（报名费即初始记分牌）");
             }
             match.setInitialScore(match.getEntryFee());
         }
+        // 机器人输赢倾向钳制（每场独立配置）
+        int bias = match.getRobotWinBias() != null ? match.getRobotWinBias() : 0;
+        match.setRobotWinBias(Math.max(-100, Math.min(100, bias)));
         match.setStatus(MttMatch.STATUS_CREATE);
         MttMatch saved = matchRepository.save(match);
         log.info("比赛创建: id={}, name={}, start={}, club={}", saved.getId(), saved.getName(),
@@ -301,7 +318,7 @@ public class MatchLifecycleService {
 
             Long roomId = gameServer.createTable(match.getId(),
                     match.getName() + "-第" + (t + 1) + "桌", match.getClubId(),
-                    seatNum, level1BaseScore, match.getRewardType(), rules);
+                    seatNum, level1BaseScore, match.getRewardType(), match.getRobotWinBias(), rules);
             ctx.getTableRoomIds().add(roomId);
             matchLog.both(match.getId(), roomId, "建比赛桌: 第" + (t + 1) + "桌, 座位=" + size
                     + "人, 底皮Lv1=" + level1BaseScore + ", 玩家=" + tableUsers);

@@ -163,15 +163,22 @@ public class HandReportService {
     }
 
     /**
-     * 进奖励圈通知（363）—— 冠军通吃定版：
+     * 进奖励圈通知（363）：
      *   实物赛：存活人数首次 ≤ prizeList 配置的名次数（进圈=有奖品拿）；
-     *   金币赛/钻石赛：冠军通吃无奖励圈概念，改为剩 2 人时通知「决赛对决」。
+     *   钻石赛：存活人数首次 ≤ rewardRanking 名次数（进圈=有钻石分）；
+     *   金币赛：冠军通吃无奖励圈概念，剩 2 人时通知「决赛对决」。
      */
     private void notifyRewardCircleIfNeeded(MttMatch match, MatchContext ctx, List<MttCompetitor> alive) {
         if (ctx.isRewardCircleNotified()) return;
-        int rewardRankCount = match.getRewardType() != null && match.getRewardType() == MttMatch.REWARD_PRIZE
-                ? parsePrizeRankCount(match.getPrizeList())
-                : 2; // 金币/钻石赛：剩2人=决赛圈
+        int type = match.getRewardType() != null ? match.getRewardType() : MttMatch.REWARD_GOLD;
+        int rewardRankCount;
+        if (type == MttMatch.REWARD_PRIZE) {
+            rewardRankCount = parsePrizeRankCount(match.getPrizeList());
+        } else if (type == MttMatch.REWARD_DIAMOND) {
+            rewardRankCount = parseRankingCount(match.getRewardRanking());
+        } else {
+            rewardRankCount = 2; // 金币赛：剩2人=决赛圈
+        }
         if (rewardRankCount <= 0 || alive.size() > rewardRankCount) return;
 
         ctx.setRewardCircleNotified(true);
@@ -214,6 +221,16 @@ public class HandReportService {
 
         // 生成发奖批次（心跳负责逐笔入账，规划 §11.4）
         payoutService.createPayoutBatch(match);
+    }
+
+    /** 钻石赛名次比例数组的名次数 */
+    public static int parseRankingCount(String rewardRankingJson) {
+        try {
+            JSONArray arr = JSON.parseArray(rewardRankingJson);
+            return arr != null ? arr.size() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /** 实物赛奖品清单里配置的名次数（去重 rank） */

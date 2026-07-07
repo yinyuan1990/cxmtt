@@ -93,6 +93,9 @@ public class AutoMatchService {
         m.setLevelTable(t.getString("levelTable"));
         m.setRewardType(t.getIntValue("rewardType", MttMatch.REWARD_GOLD));
         m.setPrizeList(t.getString("prizeList"));
+        m.setRewardRanking(t.getString("rewardRanking"));          // 钻石赛名次比例
+        m.setPlatformFeePercent(t.getIntValue("platformFeePercent", 10)); // 钻石赛平台手续费%
+        m.setRobotWinBias(t.getIntValue("robotWinBias", 0));       // 本场机器人输赢倾向
         m.setInitialPool(t.getLongValue("initialPool", 0L));
         m.setRuleTemplate(t.getString("ruleTemplate"));
         // ⭐ 公共俱乐部需要机器人：模板里配 robotCount，自动场自动带
