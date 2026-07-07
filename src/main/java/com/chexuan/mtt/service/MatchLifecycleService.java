@@ -40,6 +40,7 @@ public class MatchLifecycleService {
     private final MatchRegistry registry;
     private final GameServerClient gameServer;
     private final RegistrationService registrationService;
+    private final MatchLogService matchLog;
 
     // ==================== 创建 / 取消 ====================
 
@@ -77,6 +78,12 @@ public class MatchLifecycleService {
         MttMatch saved = matchRepository.save(match);
         log.info("比赛创建: id={}, name={}, start={}, club={}", saved.getId(), saved.getName(),
                 saved.getStartTime(), saved.getClubId());
+        matchLog.match(saved.getId(), String.format(
+                "创建比赛: name=%s, club=%d, 开赛=%tF %<tT, 类型=%d(1金币/2钻石/3实物), 报名费=%d %s, 记分牌=%d, %d人桌, 人数%d~%d, 升底皮%d分钟, 机器人=%d",
+                saved.getName(), saved.getClubId(), new java.util.Date(saved.getStartTime()),
+                saved.getRewardType(), saved.getEntryFee(), saved.getEntryCurrency(), saved.getInitialScore(),
+                saved.getSeatNum(), saved.getLowerLimit(), saved.getUpperLimit(),
+                saved.getUpgradeMinutes(), saved.getRobotCount()));
         return saved;
     }
 
@@ -120,6 +127,7 @@ public class MatchLifecycleService {
         matchRepository.save(match);
         registry.remove(matchId);
         log.warn("比赛已取消: id={}, reason={}", matchId, reason);
+        matchLog.match(matchId, "比赛取消/解散: reason=" + reason + ", 退费玩家数=" + userIds.size());
     }
 
     // ==================== 心跳钩子（MttScheduler 每 10s 调） ====================
@@ -183,18 +191,23 @@ public class MatchLifecycleService {
                     match.getId(), MttRegistration.STATUS_REGISTERED);
             if (count < match.getLowerLimit()) {
                 log.warn("人数不足解散: match={}, 报名={}, 下限={}", match.getId(), count, match.getLowerLimit());
+                matchLog.match(match.getId(), "开赛前60s人数校验不通过: 报名=" + count + " < 下限=" + match.getLowerLimit() + " → 解散退费");
                 cancel(match.getId(), "报名人数不足，比赛解散，报名费已全额退还");
                 return;
             }
 
+            matchLog.match(match.getId(), "开赛前60s人数校验通过: 报名=" + count + " → 开始分桌");
             try {
                 allocateTables(match, ctx);
                 match.setStatus(MttMatch.STATUS_PLAYING);
                 match.setParticipants((int) count);
                 matchRepository.save(match);
+                matchLog.match(match.getId(), "分桌完成: 参赛=" + count + "人, 桌数=" + ctx.getTableRoomIds().size()
+                        + ", rooms=" + ctx.getTableRoomIds() + ", 状态→PLAYING(等到点放行)");
             } catch (Exception e) {
                 // 分桌失败：允许下一轮心跳重试
                 log.error("分桌失败(下轮心跳重试): match={}", match.getId(), e);
+                matchLog.match(match.getId(), "⚠️ 分桌失败(下轮心跳重试): " + e.getMessage());
                 ctx.setStartTriggered(false);
             }
             return;
@@ -209,11 +222,14 @@ public class MatchLifecycleService {
             for (Long roomId : ctx.getTableRoomIds()) {
                 try {
                     gameServer.resumeTable(roomId);
+                    matchLog.room(match.getId(), roomId, "到点放行发牌 resumeTable");
                 } catch (Exception e) {
                     log.error("放行发牌失败: roomId={}", roomId, e);
+                    matchLog.room(match.getId(), roomId, "⚠️ 放行发牌失败: " + e.getMessage());
                 }
             }
             log.info("比赛正式开打: match={}, tables={}", match.getId(), ctx.getTableRoomIds().size());
+            matchLog.match(match.getId(), "比赛正式开打: 桌数=" + ctx.getTableRoomIds().size());
         }
     }
 
@@ -234,11 +250,14 @@ public class MatchLifecycleService {
         if (shouldBe > ctx.getCurrentLevel()) {
             int baseScore = table[shouldBe - 1][1];
             ctx.setCurrentLevel(shouldBe);
+            matchLog.match(match.getId(), "升底皮: 级别→" + shouldBe + ", 底皮=" + baseScore);
             for (Long roomId : ctx.getTableRoomIds()) {
                 try {
                     gameServer.upgradeLevel(roomId, shouldBe, baseScore);
+                    matchLog.room(match.getId(), roomId, "升底皮下发: 级别=" + shouldBe + ", 底皮=" + baseScore + "(当前局打完生效)");
                 } catch (Exception e) {
                     log.error("升底皮下发失败(下轮追平): roomId={}", roomId, e);
+                    matchLog.room(match.getId(), roomId, "⚠️ 升底皮下发失败(下轮追平): " + e.getMessage());
                 }
             }
             // 广播给所有存活玩家
@@ -284,6 +303,8 @@ public class MatchLifecycleService {
                     match.getName() + "-第" + (t + 1) + "桌", match.getClubId(),
                     seatNum, level1BaseScore, match.getRewardType(), rules);
             ctx.getTableRoomIds().add(roomId);
+            matchLog.both(match.getId(), roomId, "建比赛桌: 第" + (t + 1) + "桌, 座位=" + size
+                    + "人, 底皮Lv1=" + level1BaseScore + ", 玩家=" + tableUsers);
 
             List<Map<String, Object>> seatList = new ArrayList<>();
             int seatNo = 1;

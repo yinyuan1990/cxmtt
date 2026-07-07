@@ -32,6 +32,7 @@ public class RebalanceService {
 
     private final MttCompetitorRepository competitorRepository;
     private final GameServerClient gameServer;
+    private final MatchLogService matchLog;
 
     /**
      * 拆并桌检查（在 ctx.lock 内被调用）
@@ -58,6 +59,8 @@ public class RebalanceService {
         // 触发重排：先全场请求暂停
         log.info("触发拆并桌: match={}, alive={}, tables={}→{}, max/min={}/{}",
                 match.getId(), alive.size(), currentTables, targetTables, max, min);
+        matchLog.match(match.getId(), "触发拆并桌: 存活=" + alive.size() + ", 桌数" + currentTables + "→" + targetTables
+                + ", 最多/最少桌=" + max + "/" + min + " → 全场请求暂停");
         ctx.setRebalancing(true);
         ctx.getPausedAck().clear();
 
@@ -151,17 +154,25 @@ public class RebalanceService {
         try {
             if (!moves.isEmpty()) {
                 gameServer.transferPlayers(moves);
+                for (Map<String, Object> m : moves) {
+                    matchLog.room(match.getId(), (Long) m.get("toRoomId"),
+                            "迁入: u" + m.get("userId") + " 从room-" + m.get("fromRoomId")
+                                    + " 座位" + m.get("toSeatNo") + " 带分=" + m.get("score"));
+                }
             }
             for (Long roomId : closeRooms) {
                 gameServer.closeTable(roomId);
                 ctx.getTableRoomIds().remove(roomId);
+                matchLog.both(match.getId(), roomId, "拆并桌关桌 closeTable");
             }
             for (Long roomId : keepRooms) {
                 gameServer.resumeTable(roomId);
+                matchLog.room(match.getId(), roomId, "拆并桌完成恢复发牌 resumeTable");
             }
         } catch (Exception e) {
             // 指令失败：保持 rebalancing 状态，下一次上报/心跳重新收敛
             log.error("拆并桌执行失败(等待重试): match={}", match.getId(), e);
+            matchLog.match(match.getId(), "⚠️ 拆并桌执行失败(等待重试): " + e.getMessage());
             return;
         }
 
@@ -175,6 +186,8 @@ public class RebalanceService {
                 MttMsgType.TABLE_REBALANCE, data);
         log.info("拆并桌完成: match={}, 保留桌={}, 关桌={}, 迁移={}人",
                 match.getId(), keepRooms, closeRooms, moves.size());
+        matchLog.match(match.getId(), "拆并桌完成: 保留桌=" + keepRooms + ", 关桌=" + closeRooms
+                + ", 迁移=" + moves.size() + "人");
     }
 
     private Map<Long, List<MttCompetitor>> groupByRoom(List<MttCompetitor> alive) {

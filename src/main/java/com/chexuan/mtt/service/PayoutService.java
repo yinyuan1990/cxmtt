@@ -39,6 +39,7 @@ public class PayoutService {
     private final LedgerService ledgerService;
     private final GameServerClient gameServer;
     private final MttProperties properties;
+    private final MatchLogService matchLog;
 
     /**
      * 冠军产生时调用：计算奖池 + 生成批次（CALCULATED）+ 实物发放单。幂等（match 唯一批次）。
@@ -134,6 +135,7 @@ public class PayoutService {
         batch.setDetail(JSON.toJSONString(detail));
         payoutBatchRepository.save(batch);
         log.info("发奖批次生成: match={}, totalBonus={}, 名次数={}", match.getId(), totalBonus, detail.size());
+        matchLog.match(match.getId(), "发奖批次生成: 冠军兑付/奖池=" + totalBonus + ", 明细=" + JSON.toJSONString(detail));
     }
 
     /**
@@ -179,9 +181,12 @@ public class PayoutService {
                 data.put("amount", amount);
                 data.put("currency", currency);
                 gameServer.broadcastToUsers(List.of(userId), MttMsgType.REWARD_ARRIVED, data);
+                matchLog.match(match.getId(), "发奖入账: u" + userId + " 名次=" + rank
+                        + " +" + amount + " " + currency);
             } catch (Exception e) {
                 allDone = false;
                 log.warn("发奖入账失败(可重试): match={}, user={}, err={}", match.getId(), userId, e.getMessage());
+                matchLog.match(match.getId(), "⚠️ 发奖入账失败(心跳重试): u" + userId + ", " + e.getMessage());
             }
         }
 
@@ -191,6 +196,7 @@ public class PayoutService {
             match.setStatus(MttMatch.STATUS_FINISHED);
             matchRepository.save(match);
             log.info("发奖完成，比赛结束: match={}", match.getId());
+            matchLog.match(match.getId(), "✅ 发奖完成, 比赛状态→FINISHED");
         } else {
             batch.setRetryCount(batch.getRetryCount() + 1);
             if (batch.getRetryCount() >= properties.getPayoutMaxRetry()) {

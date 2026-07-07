@@ -27,6 +27,7 @@ public class RegistrationService {
     private final MttRegistrationRepository registrationRepository;
     private final LedgerService ledgerService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final MatchLogService matchLog;
 
     /**
      * 报名。失败抛 IllegalStateException（带用户可读原因）。
@@ -68,6 +69,7 @@ public class RegistrationService {
 
         // 2. 写报名记录（唯一键防并发双报；撞键则退刚扣的费）
         try {
+            matchLog.match(matchId, "报名: u" + userId + " 扣费=" + match.getEntryFee() + " " + match.getEntryCurrency());
             if (exist != null) {
                 exist.setStatus(MttRegistration.STATUS_REGISTERED);
                 exist.setFee(match.getEntryFee());
@@ -137,6 +139,8 @@ public class RegistrationService {
         }
         reg.setStatus(MttRegistration.STATUS_REFUNDED);
         registrationRepository.save(reg);
+        matchLog.match(match.getId(), "退费(" + reasonTag + "): u" + reg.getUserId()
+                + " +" + reg.getFee() + " " + match.getEntryCurrency());
     }
 
     // ==================== ⭐ 比赛机器人自动报名 ====================
@@ -198,6 +202,8 @@ public class RegistrationService {
         } else {
             log.info("比赛机器人自动报名: match={}, 目标={}, 实报={}", match.getId(), want, registered);
         }
+        matchLog.match(match.getId(), "机器人自动报名: 目标=" + want + ", 实报=" + registered
+                + (registered < Math.min(want, space) ? " ⚠️余额充足的机器人不够,请群主转账补" : ""));
         return registered;
     }
 }

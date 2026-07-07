@@ -40,6 +40,7 @@ public class HandReportService {
     private final GameServerClient gameServer;
     private final RebalanceService rebalanceService;
     private final PayoutService payoutService;
+    private final MatchLogService matchLog;
 
     /**
      * 幂等入口：同 (matchId, roomId, handNo) 只处理一次。
@@ -72,6 +73,17 @@ public class HandReportService {
     }
 
     private void processInLock(MttMatch match, MatchContext ctx, Long roomId, Integer handNo, JSONArray players) {
+        // ⭐ 按房间记一行本局摘要（排查赛况的主日志）
+        StringBuilder handLine = new StringBuilder("第" + handNo + "局结束 上报: ");
+        for (int i = 0; i < players.size(); i++) {
+            JSONObject p = players.getJSONObject(i);
+            if (i > 0) handLine.append(", ");
+            handLine.append("u").append(p.getLong("userId"))
+                    .append("=").append(p.getLongValue("scoreAfter"));
+            if (p.getBooleanValue("eliminated")) handLine.append("(淘汰)");
+        }
+        matchLog.room(match.getId(), roomId, handLine.toString());
+
         // 1. 刷新记分牌
         Set<Long> reportedUserIds = new HashSet<>();
         List<MttCompetitor> eliminatedNow = new ArrayList<>();
@@ -102,6 +114,7 @@ public class HandReportService {
                 eliminatedNow.add(comp);
                 log.warn("弃赛自愈判淘汰: match={}, user={}, room={}, hand={}",
                         match.getId(), comp.getUserId(), roomId, handNo);
+                matchLog.room(match.getId(), roomId, "弃赛自愈: u" + comp.getUserId() + " 不在上报名单 → 记分牌清零判淘汰");
             }
         }
 
@@ -127,6 +140,8 @@ public class HandReportService {
                 data.put("rank", rank);
                 gameServer.broadcastToUsers(List.of(comp.getUserId()), MttMsgType.ELIMINATED, data);
                 log.info("淘汰: match={}, user={}, rank={}, hand={}", match.getId(), comp.getUserId(), rank, handNo);
+                matchLog.both(match.getId(), roomId, "淘汰: u" + comp.getUserId() + " 名次=" + rank
+                        + " (第" + handNo + "局, 底皮Lv" + ctx.getCurrentLevel() + ")");
             }
         }
 
@@ -166,6 +181,8 @@ public class HandReportService {
         gameServer.broadcastToUsers(alive.stream().map(MttCompetitor::getUserId).toList(),
                 MttMsgType.REWARD_CIRCLE, data);
         log.info("进入奖励圈/决赛圈: match={}, alive={}", match.getId(), alive.size());
+        matchLog.match(match.getId(), "进入奖励圈/决赛圈: 存活=" + alive.size()
+                + " → " + alive.stream().map(c -> "u" + c.getUserId()).toList());
     }
 
     private void finishMatch(MttMatch match, MatchContext ctx, List<MttCompetitor> alive) {
@@ -180,14 +197,18 @@ public class HandReportService {
             match.setChampionUserId(champion.getUserId());
             matchRepository.save(match);
             log.info("冠军产生: match={}, user={}", match.getId(), champion.getUserId());
+            matchLog.match(match.getId(), "🏆 冠军产生: u" + champion.getUserId()
+                    + ", 记分牌=" + champion.getScore());
         }
 
         // 关掉所有比赛桌
         for (Long roomId : ctx.getTableRoomIds()) {
             try {
                 gameServer.closeTable(roomId);
+                matchLog.room(match.getId(), roomId, "终局关桌 closeTable");
             } catch (Exception e) {
                 log.error("终局关桌失败: roomId={}", roomId, e);
+                matchLog.room(match.getId(), roomId, "⚠️ 终局关桌失败: " + e.getMessage());
             }
         }
 
